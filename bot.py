@@ -45,9 +45,7 @@ async def start(update, context):
 async def add_api_cb(update, context):
     q = update.callback_query; await q.answer()
     exs = "\n".join([f"• `{e}`" for e in SUPPORTED_EXCHANGES])
-    await q.edit_message_text(f"📊 *Добавление API*\n\nОтправьте: `биржа api_key api_secret [password]`\n\nДоступные:
-{exs}\n\nПример:
-`okx xxx yyy`\n\n/cancel — отмена", parse_mode='Markdown')
+    await q.edit_message_text(f"📊 *Добавление API*\n\nОтправьте: `биржа api_key api_secret [password]`\n\nДоступные:{exs}\n\nПример:`okx xxx yyy`\n\n/cancel — отмена", parse_mode='Markdown')
     return ADDING_API
 
 async def save_api(update, context):
