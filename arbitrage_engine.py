@@ -72,6 +72,7 @@ class ArbitrageEngine:
 
         opportunities.sort(key=lambda x: x['profit_percent'], reverse=True)
         return opportunities
+    scan = scan_opportunities
 
     async def start_monitoring(self, callback):
         """Запуск мониторинга в фоне"""
