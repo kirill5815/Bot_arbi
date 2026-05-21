@@ -57,7 +57,6 @@ SPOT_PAIRS = [
     'STRK/USDT', 'ZRO/USDT', 'OP/USDT', 'ARB/USDT', 'USDC/USDT',
 ]
 
-# Алиас для совместимости с arbitrage_engine.py
 TRADING_PAIRS = SPOT_PAIRS
 
 FUTURES_PAIRS = [
@@ -68,7 +67,6 @@ FUTURES_PAIRS = [
 ]
 
 TRIANGULAR_SETS = [
-    # === BTC-мост: USDT → BTC → ALT → USDT ===
     ('BTC/USDT', 'ETH/BTC', 'ETH/USDT'),
     ('BTC/USDT', 'SOL/BTC', 'SOL/USDT'),
     ('BTC/USDT', 'BNB/BTC', 'BNB/USDT'),
@@ -89,8 +87,6 @@ TRIANGULAR_SETS = [
     ('BTC/USDT', 'OP/BTC', 'OP/USDT'),
     ('BTC/USDT', 'RENDER/BTC', 'RENDER/USDT'),
     ('BTC/USDT', 'WLD/BTC', 'WLD/USDT'),
-    
-    # === ETH-мост: USDT → ETH → ALT → USDT ===
     ('ETH/USDT', 'SOL/ETH', 'SOL/USDT'),
     ('ETH/USDT', 'BNB/ETH', 'BNB/USDT'),
     ('ETH/USDT', 'ADA/ETH', 'ADA/USDT'),
@@ -104,8 +100,6 @@ TRIANGULAR_SETS = [
     ('ETH/USDT', 'ARB/ETH', 'ARB/USDT'),
     ('ETH/USDT', 'RENDER/ETH', 'RENDER/USDT'),
     ('ETH/USDT', 'WLD/ETH', 'WLD/USDT'),
-    
-    # === USDC-мост: USDT → USDC → ALT → USDT ===
     ('USDT/USDC', 'BTC/USDC', 'BTC/USDT'),
     ('USDT/USDC', 'ETH/USDC', 'ETH/USDT'),
     ('USDT/USDC', 'SOL/USDC', 'SOL/USDT'),
@@ -114,3 +108,4 @@ TRIANGULAR_SETS = [
 
 DEFAULT_TRADE_AMOUNT = 100
 FUTURES_LEVERAGE = 1
+CACHE_TTL_SECONDS = 2

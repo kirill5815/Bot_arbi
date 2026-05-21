@@ -12,51 +12,45 @@ class ArbitrageEngine:
         self.is_monitoring = False
 
     async def scan_opportunities(self) -> List[Dict]:
-        """Сканирование арбитражных возможностей"""
         opportunities = []
         exchanges = list(self.exchange_manager.exchanges.keys())
-
         if len(exchanges) < 2:
             return opportunities
-
+        all_tickers = {}
+        for ex_id in exchanges:
+            try:
+                ticks = await self.exchange_manager.fetch_tickers_batch(ex_id, SPOT_PAIRS)
+                all_tickers[ex_id] = ticks
+            except Exception:
+                all_tickers[ex_id] = {}
         for symbol in SPOT_PAIRS:
             prices = {}
-
             for ex_id in exchanges:
-                try:
-                    ticker = await self.exchange_manager.get_ticker(ex_id, symbol)
+                tick = all_tickers[ex_id].get(symbol)
+                if tick:
                     prices[ex_id] = {
-                        'bid': ticker.get('bid', 0),
-                        'ask': ticker.get('ask', 0)
+                        'bid': tick.get('bid', 0),
+                        'ask': tick.get('ask', 0)
                     }
-                except Exception:
-                    continue
-
             for buy_ex in prices:
                 for sell_ex in prices:
                     if buy_ex == sell_ex:
                         continue
-
                     buy_price = prices[buy_ex]['ask']
                     sell_price = prices[sell_ex]['bid']
-
                     if sell_price <= buy_price or buy_price <= 0:
                         continue
-
                     spread = ((sell_price - buy_price) / buy_price) * 100
-
                     if spread >= MIN_SPREAD_PERCENT:
                         amount = 100 / buy_price if buy_price > 0 else 0
                         if amount <= 0:
                             continue
-
                         try:
                             net_profit, details = await self.fee_calc.calc(
                                 buy_ex, sell_ex, symbol, amount
                             )
                         except Exception:
                             continue
-
                         if details['profit_percent'] > 0:
                             opportunities.append({
                                 'symbol': symbol,
@@ -69,12 +63,10 @@ class ArbitrageEngine:
                                 'profit_percent': details['profit_percent'],
                                 'details': details
                             })
-
         opportunities.sort(key=lambda x: x['profit_percent'], reverse=True)
         return opportunities
 
     async def start_monitoring(self, callback):
-        """Запуск мониторинга в фоне"""
         self.is_monitoring = True
         while self.is_monitoring:
             try:
