@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Dict
-from config import TRADING_PAIRS, MIN_SPREAD_PERCENT
+from config import SPOT_PAIRS as TRADING_PAIRS, MIN_SPREAD_PERCENT
 from exchange_manager import ExchangeManager
 from fee_calculator import FeeCalculator
 
