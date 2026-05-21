@@ -1,81 +1,114 @@
+"""Треугольный арбитраж — максимально быстрый, авто-генерация путей."""
 import asyncio
-from typing import List, Dict
-from config import SPOT_PAIRS, MIN_SPREAD_PERCENT
-from exchange_manager import ExchangeManager
-from fee_calculator import FeeCalculator
+import logging
+from typing import List, Dict, Tuple
 
-class ArbitrageEngine:
-    def __init__(self, exchange_manager: ExchangeManager):
-        self.exchange_manager = exchange_manager
-        self.fee_calc = FeeCalculator(exchange_manager)
-        self.active_opportunities: List[Dict] = []
-        self.is_monitoring = False
+logger = logging.getLogger(__name__)
 
-    async def scan_opportunities(self) -> List[Dict]:
+class TriangularEngine:
+    def __init__(self, exchange_manager, fee_rate: float = 0.001,
+                 min_profit_percent: float = 0.3, trade_amount: float = 100):
+        self.em = exchange_manager
+        self.fee_rate = fee_rate
+        self.min_profit_percent = min_profit_percent
+        self.trade_amount = trade_amount
+        self._paths_cache: Dict[str, List[Tuple[str, str, str]]] = {}
+
+    def generate_paths(self, exchange_id: str) -> List[Tuple[str, str, str]]:
+        """Автогенерация всех треугольников из загруженных рынков."""
+        if exchange_id in self._paths_cache:
+            return self._paths_cache[exchange_id]
+        ex = self.em.exchanges.get(exchange_id)
+        if not ex:
+            from config import TRIANGULAR_SETS
+            return list(TRIANGULAR_SETS)
+        markets = ex.markets
+        symbols = set(markets.keys())
+        paths = []
+        quotes = {'USDT', 'USDC', 'BUSD', 'FDUSD'}
+        bases_by_quote = {q: set() for q in quotes}
+        for sym in symbols:
+            if '/' not in sym or ':' in sym:
+                continue
+            base, quote = sym.split('/')
+            if quote in quotes and base not in quotes:
+                bases_by_quote[quote].add(base)
+        main_bridges = ['BTC', 'ETH', 'BNB', 'SOL']
+        for quote in ['USDT', 'USDC']:
+            for bridge in main_bridges:
+                p1 = f"{bridge}/{quote}"
+                if p1 not in symbols:
+                    continue
+                for alt in bases_by_quote.get(quote, set()):
+                    if alt == bridge:
+                        continue
+                    p2 = f"{alt}/{bridge}"
+                    p3 = f"{alt}/{quote}"
+                    if p2 in symbols and p3 in symbols:
+                        paths.append((p1, p2, p3))
+        from config import TRIANGULAR_SETS
+        for tri in TRIANGULAR_SETS:
+            if tri not in paths:
+                paths.append(tri)
+        self._paths_cache[exchange_id] = paths
+        logger.info(f"{exchange_id}: сгенерировано {len(paths)} треугольников")
+        return paths
+
+    async def scan_triangular(self, exchange_id: str) -> List[Dict]:
         opportunities = []
-        exchanges = list(self.exchange_manager.exchanges.keys())
-        if len(exchanges) < 2:
+        paths = self.generate_paths(exchange_id)
+        if not paths:
             return opportunities
-        all_tickers = {}
-        for ex_id in exchanges:
-            try:
-                ticks = await self.exchange_manager.fetch_tickers_batch(ex_id, SPOT_PAIRS)
-                all_tickers[ex_id] = ticks
-            except Exception:
-                all_tickers[ex_id] = {}
-        for symbol in SPOT_PAIRS:
-            prices = {}
-            for ex_id in exchanges:
-                tick = all_tickers[ex_id].get(symbol)
-                if tick:
-                    prices[ex_id] = {
-                        'bid': tick.get('bid', 0),
-                        'ask': tick.get('ask', 0)
+        all_symbols = list({sym for tri in paths for sym in tri})
+        tickers = await self.em.fetch_tickers_batch(exchange_id, all_symbols)
+        for pair1, pair2, pair3 in paths:
+            t1 = tickers.get(pair1)
+            t2 = tickers.get(pair2)
+            t3 = tickers.get(pair3)
+            if not t1 or not t2 or not t3:
+                continue
+            p1_ask = t1.get('ask', 0)
+            p2_ask = t2.get('ask', 0)
+            p3_bid = t3.get('bid', 0)
+            if p1_ask <= 0 or p2_ask <= 0 or p3_bid <= 0:
+                continue
+            vol1 = t1.get('quoteVolume', 0) or 0
+            vol2 = t2.get('quoteVolume', 0) or 0
+            vol3 = t3.get('quoteVolume', 0) or 0
+            if vol1 < 30000 or vol2 < 30000 or vol3 < 30000:
+                continue
+            amount_usdt = self.trade_amount
+            base_got = (amount_usdt / p1_ask) * (1 - self.fee_rate)
+            mid_got = (base_got / p2_ask) * (1 - self.fee_rate)
+            final_usdt = mid_got * p3_bid * (1 - self.fee_rate)
+            profit = final_usdt - amount_usdt
+            profit_percent = (profit / amount_usdt) * 100 if amount_usdt else 0
+            if profit_percent > self.min_profit_percent:
+                opportunities.append({
+                    'type': 'triangular',
+                    'exchange': exchange_id,
+                    'path': f"{pair1} → {pair2} → {pair3}",
+                    'step1': pair1, 'step2': pair2, 'step3': pair3,
+                    'profit_usdt': profit,
+                    'profit_percent': profit_percent,
+                    'amount_usdt': amount_usdt,
+                    'details': {
+                        'price1': p1_ask, 'price2': p2_ask, 'price3': p3_bid,
+                        'base_got': base_got, 'mid_got': mid_got, 'final_usdt': final_usdt
                     }
-            for buy_ex in prices:
-                for sell_ex in prices:
-                    if buy_ex == sell_ex:
-                        continue
-                    buy_price = prices[buy_ex]['ask']
-                    sell_price = prices[sell_ex]['bid']
-                    if sell_price <= buy_price or buy_price <= 0:
-                        continue
-                    spread = ((sell_price - buy_price) / buy_price) * 100
-                    if spread >= MIN_SPREAD_PERCENT:
-                        amount = 100 / buy_price if buy_price > 0 else 0
-                        if amount <= 0:
-                            continue
-                        try:
-                            net_profit, details = await self.fee_calc.calc(
-                                buy_ex, sell_ex, symbol, amount
-                            )
-                        except Exception:
-                            continue
-                        if details['profit_percent'] > 0:
-                            opportunities.append({
-                                'symbol': symbol,
-                                'buy_exchange': buy_ex,
-                                'sell_exchange': sell_ex,
-                                'buy_price': buy_price,
-                                'sell_price': sell_price,
-                                'spread_percent': spread,
-                                'net_profit_usd': net_profit,
-                                'profit_percent': details['profit_percent'],
-                                'details': details
-                            })
+                })
         opportunities.sort(key=lambda x: x['profit_percent'], reverse=True)
         return opportunities
 
-    async def start_monitoring(self, callback):
-        self.is_monitoring = True
-        while self.is_monitoring:
-            try:
-                ops = await self.scan_opportunities()
-                if ops:
-                    await callback(ops)
-                await asyncio.sleep(10)
-            except Exception:
-                await asyncio.sleep(30)
-
-    def stop_monitoring(self):
-        self.is_monitoring = False
+    async def scan_all_exchanges(self) -> List[Dict]:
+        """Параллельное сканирование всех бирж."""
+        if not self.em.exchanges:
+            return []
+        tasks = [self.scan_triangular(eid) for eid in self.em.exchanges]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        all_ops = []
+        for res in results:
+            if isinstance(res, list):
+                all_ops.extend(res)
+        all_ops.sort(key=lambda x: x['profit_percent'], reverse=True)
+        return all_ops
