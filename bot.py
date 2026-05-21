@@ -32,7 +32,7 @@ def check_auth(func):
 async def start(update, context):
     kb = [
         [InlineKeyboardButton("📊 Добавить API", callback_data='add_api')],
-        [InlineKeyboardButton("🔍 Спот арбитраж", callback_data='scan_spot')],
+        [InlineKeyboardButton("🔍 Спот арбитраж", callback_data='scan_spo')],
         [InlineKeyboardButton("🔺 Треугольный", callback_data='scan_tri')],
         [InlineKeyboardButton("📈 Фьючерсы", callback_data='scan_fut')],
         [InlineKeyboardButton("💰 Баланс", callback_data='balance')],
@@ -67,7 +67,7 @@ async def scan_spot(update, context):
     if len(em.exchanges) < 2:
         await q.edit_message_text("⚠️ *Нужно минимум 2 биржи.*", parse_mode='Markdown'); return
     await q.edit_message_text("🔍 Сканирую спот... (30 пар)")
-    try: ops = await ae.scan()
+    try: ops = await ae.scan_opportunities()
     except Exception as e: await q.edit_message_text(f"❌ `{e}`", parse_mode='Markdown'); return
     await show_opportunities(q, context, ops, 'spot')
 
@@ -128,7 +128,8 @@ async def show_opportunities(q, context, ops, scan_type):
 async def trade_cb(update, context):
     q = update.callback_query; await q.answer()
     parts = q.data.split('_')
-    idx = int(parts[2]); scan_type = parts[1]
+    idx = int(parts[-1])  # последний элемент всегда индекс
+    scan_type = context.user_data.get('scan_type', 'spot')
     ops = context.user_data.get('opportunities', [])
     if idx >= len(ops): await q.edit_message_text("❌ Устарело."); return
     op = ops[idx]
@@ -239,7 +240,7 @@ async def transfer_cb(update, context):
     t = transfers[idx]
     txt = (f"⚠️ *Ручной перевод*\n\nСумма: `{t['amount']}` USDT\nОткуда: `{t['from']}`\nКуда: `{t['to']}`\n\n"
            f"📋 Действия:\n1. `{t['from']}` → Вывод\n2. USDT (сеть TRC20/BEP20)\n3. Адрес с `{t['to']}`")
-    await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Меню", callback_data='menu')]]), parse_mode='Markdown')
+    await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Меню", callback_data='menu')]]))
 
 async def history(update, context):
     q = update.callback_query; await q.answer()
@@ -276,7 +277,7 @@ async def menu(update, context):
 
 async def notify(context):
     try:
-        ops = await ae.scan()
+        ops = await ae.scan_opportunities()
         good = [o for o in ops if o.get('profit_percent', 0) > 0.5]
         if good:
             txt = "🚨 *Спот арбитраж!*\n\n" + "\n".join([f"• `{o['symbol']}`: `{o['profit_percent']:.2f}%`" for o in good[:3]]) + "\n\n/start"

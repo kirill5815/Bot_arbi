@@ -57,6 +57,9 @@ SPOT_PAIRS = [
     'STRK/USDT', 'ZRO/USDT', 'OP/USDT', 'ARB/USDT', 'USDC/USDT',
 ]
 
+# Алиас для совместимости с arbitrage_engine.py
+TRADING_PAIRS = SPOT_PAIRS
+
 FUTURES_PAIRS = [
     'BTC/USDT:USDT', 'ETH/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT',
     'BNB/USDT:USDT', 'DOGE/USDT:USDT', 'ADA/USDT:USDT', 'AVAX/USDT:USDT',
@@ -65,14 +68,48 @@ FUTURES_PAIRS = [
 ]
 
 TRIANGULAR_SETS = [
+    # === BTC-мост: USDT → BTC → ALT → USDT ===
     ('BTC/USDT', 'ETH/BTC', 'ETH/USDT'),
     ('BTC/USDT', 'SOL/BTC', 'SOL/USDT'),
     ('BTC/USDT', 'BNB/BTC', 'BNB/USDT'),
+    ('BTC/USDT', 'ADA/BTC', 'ADA/USDT'),
+    ('BTC/USDT', 'AVAX/BTC', 'AVAX/USDT'),
+    ('BTC/USDT', 'DOT/BTC', 'DOT/USDT'),
+    ('BTC/USDT', 'LINK/BTC', 'LINK/USDT'),
+    ('BTC/USDT', 'TRX/BTC', 'TRX/USDT'),
+    ('BTC/USDT', 'DOGE/BTC', 'DOGE/USDT'),
+    ('BTC/USDT', 'XRP/BTC', 'XRP/USDT'),
+    ('BTC/USDT', 'SHIB/BTC', 'SHIB/USDT'),
+    ('BTC/USDT', 'PEPE/BTC', 'PEPE/USDT'),
+    ('BTC/USDT', 'SUI/BTC', 'SUI/USDT'),
+    ('BTC/USDT', 'APT/BTC', 'APT/USDT'),
+    ('BTC/USDT', 'INJ/BTC', 'INJ/USDT'),
+    ('BTC/USDT', 'FET/BTC', 'FET/USDT'),
+    ('BTC/USDT', 'ARB/BTC', 'ARB/USDT'),
+    ('BTC/USDT', 'OP/BTC', 'OP/USDT'),
+    ('BTC/USDT', 'RENDER/BTC', 'RENDER/USDT'),
+    ('BTC/USDT', 'WLD/BTC', 'WLD/USDT'),
+    
+    # === ETH-мост: USDT → ETH → ALT → USDT ===
     ('ETH/USDT', 'SOL/ETH', 'SOL/USDT'),
-    ('ETH/USDT', 'LINK/ETH', 'LINK/USDT'),
+    ('ETH/USDT', 'BNB/ETH', 'BNB/USDT'),
     ('ETH/USDT', 'ADA/ETH', 'ADA/USDT'),
-    ('USDT/USDC', 'BTC/USDC', 'BTC/USDT'),
+    ('ETH/USDT', 'LINK/ETH', 'LINK/USDT'),
+    ('ETH/USDT', 'SHIB/ETH', 'SHIB/USDT'),
     ('ETH/USDT', 'PEPE/ETH', 'PEPE/USDT'),
+    ('ETH/USDT', 'SUI/ETH', 'SUI/USDT'),
+    ('ETH/USDT', 'INJ/ETH', 'INJ/USDT'),
+    ('ETH/USDT', 'FET/ETH', 'FET/USDT'),
+    ('ETH/USDT', 'OP/ETH', 'OP/USDT'),
+    ('ETH/USDT', 'ARB/ETH', 'ARB/USDT'),
+    ('ETH/USDT', 'RENDER/ETH', 'RENDER/USDT'),
+    ('ETH/USDT', 'WLD/ETH', 'WLD/USDT'),
+    
+    # === USDC-мост: USDT → USDC → ALT → USDT ===
+    ('USDT/USDC', 'BTC/USDC', 'BTC/USDT'),
+    ('USDT/USDC', 'ETH/USDC', 'ETH/USDT'),
+    ('USDT/USDC', 'SOL/USDC', 'SOL/USDT'),
+    ('USDT/USDC', 'BNB/USDC', 'BNB/USDT'),
 ]
 
 DEFAULT_TRADE_AMOUNT = 100

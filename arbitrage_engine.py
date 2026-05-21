@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Dict
-from config import SPOT_PAIRS as TRADING_PAIRS, MIN_SPREAD_PERCENT
+from config import SPOT_PAIRS, MIN_SPREAD_PERCENT
 from exchange_manager import ExchangeManager
 from fee_calculator import FeeCalculator
 
@@ -19,7 +19,7 @@ class ArbitrageEngine:
         if len(exchanges) < 2:
             return opportunities
 
-        for symbol in TRADING_PAIRS:
+        for symbol in SPOT_PAIRS:
             prices = {}
 
             for ex_id in exchanges:
@@ -51,7 +51,7 @@ class ArbitrageEngine:
                             continue
 
                         try:
-                            net_profit, details = await self.fee_calc.calculate_net_profit(
+                            net_profit, details = await self.fee_calc.calc(
                                 buy_ex, sell_ex, symbol, amount
                             )
                         except Exception:
@@ -72,7 +72,6 @@ class ArbitrageEngine:
 
         opportunities.sort(key=lambda x: x['profit_percent'], reverse=True)
         return opportunities
-    scan = scan_opportunities
 
     async def start_monitoring(self, callback):
         """Запуск мониторинга в фоне"""
