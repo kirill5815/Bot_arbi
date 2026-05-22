@@ -109,3 +109,7 @@ TRIANGULAR_SETS = [
 DEFAULT_TRADE_AMOUNT = 100
 FUTURES_LEVERAGE = 1
 CACHE_TTL_SECONDS = 2
+
+# === БУМАЖНАЯ ТОРГОВЛЯ ===
+PAPER_TRADING_BALANCE = 700.0  # Стартовый виртуальный баланс USDT
+PAPER_FEE_RATE = 0.001  # 0.1% комиссия
