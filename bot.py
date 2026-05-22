@@ -100,7 +100,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === НАСТРОЙКИ ===
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    await q.answer()
+    # Не вызываем q.answer() здесь, так как adjust_setting уже ответил
 
     global PAPER_MODE
 
@@ -143,34 +143,56 @@ async def adjust_setting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global PAPER_MODE, te
 
     q = update.callback_query
+    await q.answer()  # Отвечаем один раз сразу
     data = q.data
 
     if data == 'mode_paper':
         PAPER_MODE = True
         te = PaperTradeExecutor(em)
         logger.info("Переключено на БУМАЖНУЮ торговлю")
-        await q.answer("📝 Режим: БУМАЖНАЯ", show_alert=True)
+        # Отправляем уведомление отдельным сообщением
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text="📝 *Режим переключён на БУМАЖНУЮ торговлю*
+
+Виртуальный баланс: $700 USDT",
+                parse_mode='Markdown'
+            )
+        except Exception:
+            pass
     elif data == 'mode_real':
         if not em.exchanges:
-            await q.answer("❌ Сначала добавьте API!", show_alert=True)
-            await settings_menu(update, context)
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text="❌ *Ошибка:* Сначала добавьте API биржи в меню!",
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass
             return
         PAPER_MODE = False
         te = TradeExecutor(em, scalp_engine=sc)
         logger.info("Переключено на РЕАЛЬНУЮ торговлю")
-        await q.answer("💰 Режим: РЕАЛЬНАЯ", show_alert=True)
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_user.id,
+                text="💰 *Режим переключён на РЕАЛЬНУЮ торговлю*
+
+⚠️ Внимание: будут отправляться настоящие ордера на биржу!",
+                parse_mode='Markdown'
+            )
+        except Exception:
+            pass
     elif data == 'set_thresh_down':
         tri.min_profit_percent = max(0.05, round(tri.min_profit_percent - 0.1, 2))
-        await q.answer(f"Порог: {tri.min_profit_percent}%")
     elif data == 'set_thresh_up':
         tri.min_profit_percent = min(5.0, round(tri.min_profit_percent + 0.1, 2))
-        await q.answer(f"Порог: {tri.min_profit_percent}%")
     elif data == 'set_amt_down':
         tri.trade_amount = max(10, tri.trade_amount - 10)
-        await q.answer(f"Сумма: {tri.trade_amount} USDT")
     elif data == 'set_amt_up':
         tri.trade_amount = min(10000, tri.trade_amount + 10)
-        await q.answer(f"Сумма: {tri.trade_amount} USDT")
 
     await settings_menu(update, context)
 
