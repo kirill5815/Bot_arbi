@@ -16,6 +16,7 @@ from triangular_engine import TriangularEngine
 from futures_engine import FuturesEngine
 from scalping_engine import ScalpingEngine
 from trade_executor import TradeExecutor
+from paper_trade_executor import PaperTradeExecutor
 from database import Database
 from balance_manager import BalanceManager
 
@@ -35,9 +36,15 @@ ae = ArbitrageEngine(em)
 tri = TriangularEngine(em, min_profit_percent=0.3, trade_amount=100)
 fut = FuturesEngine(em)
 sc = ScalpingEngine(em)
-te = TradeExecutor(em, scalp_engine=sc)
 db = Database()
 bm = BalanceManager(em)
+
+# === РЕЖИМ ТОРГОВЛИ ===
+# True = бумажная торговля (виртуальный баланс $700)
+# False = реальная торговля (настоящие API-ордера)
+PAPER_MODE = True
+
+te = PaperTradeExecutor(em) if PAPER_MODE else TradeExecutor(em, scalp_engine=sc)
 
 
 def check_auth(func):
@@ -75,8 +82,13 @@ def back_menu():
 # === СТАРТ / МЕНЮ ===
 @check_auth
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global PAPER_MODE
+    mode_emoji = "📝" if PAPER_MODE else "💰"
+    mode_text = "БУМАЖНАЯ" if PAPER_MODE else "РЕАЛЬНАЯ"
+
     text = (
-        "🤖 *Arbitrage Bot Pro v3.0*\n\n"
+        f"🤖 *Arbitrage Bot Pro v3.1*\n\n"
+        f"{mode_emoji} *Режим: {mode_text}*\n"
         f"• Бирж подключено: `{len(em.exchanges)}`\n"
         f"• Спот пар: `{len(SPOT_PAIRS)}`\n"
         f"• Фьючерсов: `{len(FUTURES_PAIRS)}`\n"
@@ -98,14 +110,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    global PAPER_MODE
+    mode_emoji = "📝" if PAPER_MODE else "💰"
+    mode_text = "БУМАЖНАЯ" if PAPER_MODE else "РЕАЛЬНАЯ"
+
+    # Баланс в зависимости от режима
+    if PAPER_MODE and hasattr(te, 'balance_usdt'):
+        balance_text = f"📝 Вирт. баланс: `{te.balance_usdt:.2f}` USDT"
+    else:
+        balance_text = "💰 Реальный баланс: смотри на бирже"
+
     text = (
-        "⚙️ *Настройки*\n\n"
+        f"⚙️ *Настройки*\n\n"
+        f"{mode_emoji} *Режим торговли: {mode_text}*\n"
+        f"{balance_text}\n\n"
         f"Порог треугольника: `{tri.min_profit_percent}%`\n"
         f"Сумма сделки: `{tri.trade_amount}` USDT\n"
         f"Скальпинг TP: `+{sc.tp_percent*100}%` | SL: `−{sc.sl_percent*100}%`\n\n"
         f"_Прибыль треугольника считается: спред − 3×комиссия_"
     )
+
     kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📝 Бумажная (вирт. $700)", callback_data='mode_paper'),
+         InlineKeyboardButton(f"💰 Реальная (API ордера)", callback_data='mode_real')],
         [InlineKeyboardButton("➖ Порог −0.1%", callback_data='set_thresh_down'),
          InlineKeyboardButton("➕ Порог +0.1%", callback_data='set_thresh_up')],
         [InlineKeyboardButton("➖ Сумма −10", callback_data='set_amt_down'),
@@ -119,7 +147,24 @@ async def adjust_setting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     data = q.data
-    if 'thresh_down' in data:
+
+    global PAPER_MODE, te
+
+    if data == 'mode_paper':
+        PAPER_MODE = True
+        te = PaperTradeExecutor(em)
+        logger.info("Переключено на БУМАЖНУЮ торговлю")
+        await q.answer("📝 Режим: БУМАЖНАЯ", show_alert=True)
+    elif data == 'mode_real':
+        if not em.exchanges:
+            await q.answer("❌ Сначала добавьте API биржи!", show_alert=True)
+            await settings_menu(update, context)
+            return
+        PAPER_MODE = False
+        te = TradeExecutor(em, scalp_engine=sc)
+        logger.info("Переключено на РЕАЛЬНУЮ торговлю")
+        await q.answer("💰 Режим: РЕАЛЬНАЯ", show_alert=True)
+    elif 'thresh_down' in data:
         tri.min_profit_percent = max(0.05, round(tri.min_profit_percent - 0.1, 2))
     elif 'thresh_up' in data:
         tri.min_profit_percent = min(5.0, round(tri.min_profit_percent + 0.1, 2))
@@ -127,6 +172,7 @@ async def adjust_setting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tri.trade_amount = max(10, tri.trade_amount - 10)
     elif 'amt_up' in data:
         tri.trade_amount = min(10000, tri.trade_amount + 10)
+
     await settings_menu(update, context)
 
 
@@ -313,10 +359,14 @@ async def trade_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['selected_op'] = op
     context.user_data['scan_type'] = scan_type
 
+    global PAPER_MODE
+    mode_warn = "📝 *БУМАЖНАЯ ТОРГОВЛЯ*\n" if PAPER_MODE else "💰 *РЕАЛЬНАЯ ТОРГОВЛЯ*\n"
+
     otype = op.get('type', '')
     if otype in ('scalp_dip', 'scalp_pump'):
         strategy = "Отскок после падения" if op['strategy'] == 'buy_dip' else "Покупка импульса"
         txt = (
+            f"{mode_warn}\n"
             f"⚠️ *Скальпинг-сделка*\n\n"
             f"Пара: `{op['symbol']}` @ `{op['exchange']}`\n"
             f"Стратегия: `{strategy}`\n"
@@ -331,6 +381,7 @@ async def trade_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif otype == 'triangular':
         txt = (
+            f"{mode_warn}\n"
             f"⚠️ *Треугольная сделка*\n\n"
             f"Биржа: `{op['exchange']}`\n"
             f"Путь: `{op['path']}`\n"
@@ -339,6 +390,7 @@ async def trade_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif otype.startswith('futures'):
         txt = (
+            f"{mode_warn}\n"
             f"⚠️ *Фьючерсная сделка*\n\n"
             f"{op['symbol']} @ `{op['exchange']}`\n"
             f"Стратегия: `{op['strategy']}`\n"
@@ -348,6 +400,7 @@ async def trade_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         txt = (
+            f"{mode_warn}\n"
             f"⚠️ *Спот сделка*\n\n"
             f"Пара: `{op['symbol']}`\n"
             f"Купить: `{op['buy_exchange']}`\n"
@@ -380,11 +433,19 @@ async def set_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tid = await te.prepare(op, amount)
     context.user_data['trade_id'] = tid
 
+    global PAPER_MODE
     otype = op.get('type', '')
+
+    if PAPER_MODE:
+        balance_text = f"📝 Вирт. баланс: `{te.balance_usdt:.2f}` USDT"
+    else:
+        balance_text = "💰 Реальный баланс на бирже"
+
     if otype in ('scalp_dip', 'scalp_pump'):
         exp_profit = amount * sc.tp_percent
         exp_loss = amount * sc.sl_percent
         txt = (
+            f"{balance_text}\n\n"
             f"⚠️ *Подтвердите скальпинг*\n\n"
             f"Пара: `{op['symbol']}`\n"
             f"Сумма: `{amount}` USDT\n"
@@ -396,6 +457,7 @@ async def set_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         exp_profit = op.get('profit_percent', 0) * amount / 100
         txt = (
+            f"{balance_text}\n\n"
             f"⚠️ *Подтвердите сделку*\n\n"
             f"Сумма: `{amount}` USDT\n"
             f"Ожидаемая прибыль: `~{exp_profit:.2f}` USDT\n\n"
@@ -417,9 +479,12 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text("⏳ *Исполнение ордеров...*", parse_mode='Markdown')
     res = await te.execute(tid)
 
+    global PAPER_MODE
+    mode_emoji = "📝" if PAPER_MODE else "💰"
+
     if res['success']:
         tr = res['trade']
-        profit = tr.get('expected_profit', 0)
+        profit = tr.get('profit', 0) or tr.get('expected_profit', 0)
         ttype = tr.get('trade_type', 'spot')
 
         try:
@@ -430,9 +495,14 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"DB save error: {e}")
 
+        if PAPER_MODE and hasattr(te, 'balance_usdt'):
+            balance_text = f"\n📝 Баланс: `{te.balance_usdt:.2f}` USDT"
+        else:
+            balance_text = ""
+
         if ttype in ('scalp_dip', 'scalp_pump'):
             txt = (
-                f"✅ *Позиция открыта!*\n\n"
+                f"{mode_emoji} *Позиция открыта!*{balance_text}\n\n"
                 f"ID: `{tr['id']}`\n"
                 f"Пара: `{tr['symbol']}` @ `{tr['buy_exchange']}`\n"
                 f"Вход: `{tr.get('entry_price', 0):.6f}`\n"
@@ -445,7 +515,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             txt = (
-                f"✅ *Сделка выполнена!*\n\n"
+                f"{mode_emoji} *Сделка выполнена!*{balance_text}\n\n"
                 f"ID: `{tr['id']}`\n"
                 f"Тип: `{ttype}`\n"
                 f"Пара: `{tr['symbol']}`\n"
@@ -478,10 +548,43 @@ async def cancel_trade_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    global PAPER_MODE
+
+    if PAPER_MODE:
+        # Бумажный баланс
+        if hasattr(te, 'balance_usdt'):
+            txt = (
+                f"📝 *Бумажный баланс*\n\n"
+                f"USDT: `{te.balance_usdt:.2f}`\n"
+            )
+            if hasattr(te, 'positions') and te.positions:
+                txt += f"\n*Позиции:*\n"
+                for sym, qty in te.positions.items():
+                    txt += f"  `{sym}`: `{qty:.6f}`\n"
+            else:
+                txt += "\nНет открытых позиций."
+
+            if hasattr(te, 'get_stats'):
+                stats = te.get_stats()
+                txt += (
+                    f"\n📊 *Статистика бумажной торговли:*\n"
+                    f"Сделок: `{stats['total_trades']}`\n"
+                    f"Прибыль: `{stats['total_profit']:.4f}` USDT\n"
+                    f"Win rate: `{stats['win_rate']:.1f}%`"
+                )
+        else:
+            txt = "📝 Бумажный режим активен, но данные недоступны."
+
+        await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+
+    # Реальный баланс
     if not em.exchanges:
         await q.edit_message_text("⚠️ Биржи не подключены.", reply_markup=main_menu_keyboard())
         return
-    txt = "💰 *Балансы:*\n\n"
+
+    txt = "💰 *Реальные балансы:*\n\n"
     total_free = 0
     total_total = 0
     for eid in em.exchanges:
@@ -503,17 +606,32 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    global PAPER_MODE
+
     try:
-        s = await db.get_stats()
-        txt = (
-            f"📈 *Статистика*\n\n"
-            f"Сделок выполнено: `{s['total_trades']}`\n"
-            f"Общая прибыль: `{s['total_profit']:.4f}` USDT\n"
-            f"Средняя сделка: `{s['avg_profit']:.4f}` USDT\n\n"
-            f"💡 *Совет:* Используйте реинвест для роста капитала."
-        )
+        if PAPER_MODE and hasattr(te, 'get_stats'):
+            s = te.get_stats()
+            txt = (
+                f"📝 *Бумажная статистика*\n\n"
+                f"Сделок: `{s['total_trades']}`\n"
+                f"Прибыль: `{s['total_profit']:.4f}` USDT\n"
+                f"Средняя: `{s['avg_profit']:.4f}` USDT\n"
+                f"Win rate: `{s['win_rate']:.1f}%`\n"
+                f"Текущий баланс: `{s['current_balance']:.2f}` USDT\n"
+                f"Открытых позиций: `{s['open_positions']}`"
+            )
+        else:
+            s = await db.get_stats()
+            txt = (
+                f"📈 *Реальная статистика*\n\n"
+                f"Сделок выполнено: `{s['total_trades']}`\n"
+                f"Общая прибыль: `{s['total_profit']:.4f}` USDT\n"
+                f"Средняя сделка: `{s['avg_profit']:.4f}` USDT"
+            )
     except Exception as e:
         txt = f"⚠️ Ошибка статистики: `{e}`"
+
     await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
 
 
@@ -538,23 +656,30 @@ async def history_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
+    global PAPER_MODE
+    mode_text = "📝 БУМАЖНАЯ" if PAPER_MODE else "💰 РЕАЛЬНАЯ"
+
     txt = (
-        "📖 *Инструкция*\n\n"
-        "*1. ⚡ Быстрый скан*\n"
-        "Только треугольный арбитраж внутри бирж. "
-        "Самый быстрый (1–2 сек) и подходит для малого капитала.\n\n"
-        "*2. 🔍 Глубокий скан*\n"
-        "Спот + треугольник + фьючерсы + скальпинг одновременно.\n\n"
-        "*3. 📉 Скальпинг*\n"
-        "Авто-вход при резком падении (DIP) или импульсе (PUMP). "
-        "Бот сам ставит TP лимитным ордером и следит за SL.\n\n"
-        "*4. ⚙️ Настройки*\n"
-        "• Порог прибыли — минимальный % для треугольника\n"
-        "• Сумма сделки — сколько USDT использовать\n\n"
-        "*5. 💡 Советы*\n"
-        "• Держите BNB на Binance для скидки 25% на комиссии\n"
-        "• Торгуйте в 14:00–16:00 UTC (фандинг, америка)\n"
-        "• Скальпинг: не входите на >50% депозита за раз"
+        f"📖 *Инструкция*\n\n"
+        f"Текущий режим: *{mode_text}*\n\n"
+        f"*1. ⚡ Быстрый скан*\n"
+        f"Только треугольный арбитраж внутри бирж. "
+        f"Самый быстрый (1–2 сек) и подходит для малого капитала.\n\n"
+        f"*2. 🔍 Глубокий скан*\n"
+        f"Спот + треугольник + фьючерсы + скальпинг одновременно.\n\n"
+        f"*3. 📉 Скальпинг*\n"
+        f"Авто-вход при резком падении (DIP) или импульсе (PUMP). "
+        f"Бот сам ставит TP лимитным ордером и следит за SL.\n\n"
+        f"*4. ⚙️ Настройки*\n"
+        f"• Порог прибыли — минимальный % для треугольника\n"
+        f"• Сумма сделки — сколько USDT использовать\n"
+        f"• Режим торговли — бумажная или реальная\n\n"
+        f"*5. 💡 Советы*\n"
+        f"• Держите BNB на Binance для скидки 25% на комиссии\n"
+        f"• Торгуйте в 14:00–16:00 UTC (фандинг, америка)\n"
+        f"• Скальпинг: не входите на >50% депозита за раз\n"
+        f"• Бумажная торговля — лучший способ потренироваться без риска"
     )
     await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
 
@@ -579,7 +704,7 @@ async def notify(context: ContextTypes.DEFAULT_TYPE):
 async def post_init(app):
     await db.init()
     sc.start_monitor()
-    logger.info("БД инициализирована, мониторинг TP/SL запущен")
+    logger.info(f"БД инициализирована, мониторинг TP/SL запущен. Режим: {'БУМАЖНЫЙ' if PAPER_MODE else 'РЕАЛЬНЫЙ'}")
 
 
 async def post_stop(app):
@@ -613,6 +738,7 @@ def main():
     app.add_handler(CallbackQueryHandler(scan_scalp, pattern='^scan_scalp$'))
     app.add_handler(CallbackQueryHandler(settings_menu, pattern='^settings$'))
     app.add_handler(CallbackQueryHandler(adjust_setting, pattern='^set_(thresh|amt)_(up|down)$'))
+    app.add_handler(CallbackQueryHandler(adjust_setting, pattern='^mode_(paper|real)$'))
 
     app.add_handler(CallbackQueryHandler(confirm, pattern='^confirm_'))
     app.add_handler(CallbackQueryHandler(cancel_trade_cb, pattern='^cancel_'))
