@@ -71,6 +71,43 @@ def main_menu_keyboard():
     ])
 
 
+# === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ РЕНДЕРА НАСТРОЕК ===
+# Определена ДО settings_menu и adjust_setting
+async def _render_settings(q):
+    """Рендерит меню настроек."""
+    global PAPER_MODE
+
+    if PAPER_MODE:
+        mode_emoji = "📝"
+        mode_text = "БУМАЖНАЯ"
+        balance_text = f"Вирт. баланс: {te.balance_usdt:.2f} USDT" if hasattr(te, 'balance_usdt') else "Бумажный режим"
+    else:
+        mode_emoji = "💰"
+        mode_text = "РЕАЛЬНАЯ"
+        balance_text = "Реальные деньги на бирже"
+
+    text = (
+        f"⚙️ *Настройки*\n\n"
+        f"{mode_emoji} *Режим: {mode_text}*\n"
+        f"{balance_text}\n\n"
+        f"Порог треуг: `{tri.min_profit_percent}%`\n"
+        f"Сумма: `{tri.trade_amount}` USDT\n"
+        f"TP: `+{sc.tp_percent*100}%` | SL: `−{sc.sl_percent*100}%`"
+    )
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Бумажная", callback_data='mode_paper'),
+         InlineKeyboardButton("💰 Реальная", callback_data='mode_real')],
+        [InlineKeyboardButton("➖ Порог −0.1%", callback_data='set_thresh_down'),
+         InlineKeyboardButton("➕ Порог +0.1%", callback_data='set_thresh_up')],
+        [InlineKeyboardButton("➖ Сумма −10", callback_data='set_amt_down'),
+         InlineKeyboardButton("➕ Сумма +10", callback_data='set_amt_up')],
+        [InlineKeyboardButton("🔙 Главное меню", callback_data='menu_main')]
+    ])
+
+    await q.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+
+
 # === СТАРТ / МЕНЮ ===
 @check_auth
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,18 +115,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode_text = "БУМАЖНАЯ" if PAPER_MODE else "РЕАЛЬНАЯ"
 
     text = (
-        f"🤖 *Arbitrage Bot Pro v3.2*\n\n"
+        f"🤖 *Arbitrage Bot Pro v3.3*\n\n"
         f"{mode_emoji} *Режим: {mode_text}*\n"
-        f"• Бирж подключено: `{len(em.exchanges)}`\n"
-        f"• Спот пар: `{len(SPOT_PAIRS)}`\n"
-        f"• Фьючерсов: `{len(FUTURES_PAIRS)}`\n"
-        f"• Треугольников: `авто`\n"
-        f"• Скальпинг: `DIP+PUMP`\n\n"
-        f"💡 *Режимы:*\n"
-        f"⚡ Быстрый — треугольники, 1–2 сек\n"
-        f"🔍 Глубокий — всё одновременно\n"
-        f"📉 Скальпинг — авто TP/SL\n\n"
-        f"⚙️ Порог треуг: `{tri.min_profit_percent}%` | Сумма: `{tri.trade_amount}` USDT"
+        f"• Бирж: `{len(em.exchanges)}` | Спот: `{len(SPOT_PAIRS)}` | Фьюч: `{len(FUTURES_PAIRS)}`\n"
+        f"• Треугольников: `авто` | Скальпинг: `DIP+PUMP`\n\n"
+        f"⚙️ Порог: `{tri.min_profit_percent}%` | Сумма: `{tri.trade_amount}` USDT"
     )
     if update.message:
         await update.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
@@ -100,101 +130,45 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === НАСТРОЙКИ ===
 async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
-    # Не вызываем q.answer() здесь, так как adjust_setting уже ответил
-
-    global PAPER_MODE
-
-    if PAPER_MODE:
-        mode_emoji = "📝"
-        mode_text = "БУМАЖНАЯ"
-        if hasattr(te, 'balance_usdt'):
-            balance_text = f"📝 Вирт. баланс: `{te.balance_usdt:.2f}` USDT"
-        else:
-            balance_text = "📝 Бумажный режим"
-    else:
-        mode_emoji = "💰"
-        mode_text = "РЕАЛЬНАЯ"
-        balance_text = "💰 Реальные деньги на бирже"
-
-    text = (
-        f"⚙️ *Настройки*\n\n"
-        f"{mode_emoji} *Режим торговли: {mode_text}*\n"
-        f"{balance_text}\n\n"
-        f"Порог треугольника: `{tri.min_profit_percent}%`\n"
-        f"Сумма сделки: `{tri.trade_amount}` USDT\n"
-        f"Скальпинг TP: `+{sc.tp_percent*100}%` | SL: `−{sc.sl_percent*100}%`\n\n"
-        f"_Прибыль треугольника: спред − 3×комиссия_"
-    )
-
-    kb = [
-        [InlineKeyboardButton("📝 Бумажная (вирт. $700)", callback_data='mode_paper'),
-         InlineKeyboardButton("💰 Реальная (API)", callback_data='mode_real')],
-        [InlineKeyboardButton("➖ Порог −0.1%", callback_data='set_thresh_down'),
-         InlineKeyboardButton("➕ Порог +0.1%", callback_data='set_thresh_up')],
-        [InlineKeyboardButton("➖ Сумма −10", callback_data='set_amt_down'),
-         InlineKeyboardButton("➕ Сумма +10", callback_data='set_amt_up')],
-        [InlineKeyboardButton("🔙 Главное меню", callback_data='menu_main')]
-    ]
-
-    await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+    await q.answer()
+    await _render_settings(q)
 
 
 async def adjust_setting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global PAPER_MODE, te
-
     q = update.callback_query
-    await q.answer()  # Отвечаем один раз сразу
     data = q.data
 
+    changed = False
     if data == 'mode_paper':
         PAPER_MODE = True
         te = PaperTradeExecutor(em)
-        logger.info("Переключено на БУМАЖНУЮ торговлю")
-        # Отправляем уведомление отдельным сообщением
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text="📝 *Режим переключён на БУМАЖНУЮ торговлю*
-
-Виртуальный баланс: $700 USDT",
-                parse_mode='Markdown'
-            )
-        except Exception:
-            pass
+        changed = True
+        logger.info("БУМАЖНАЯ торговля")
     elif data == 'mode_real':
         if not em.exchanges:
-            try:
-                await context.bot.send_message(
-                    chat_id=update.effective_user.id,
-                    text="❌ *Ошибка:* Сначала добавьте API биржи в меню!",
-                    parse_mode='Markdown'
-                )
-            except Exception:
-                pass
+            await q.answer("❌ Сначала добавьте API!", show_alert=True)
             return
         PAPER_MODE = False
         te = TradeExecutor(em, scalp_engine=sc)
-        logger.info("Переключено на РЕАЛЬНУЮ торговлю")
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_user.id,
-                text="💰 *Режим переключён на РЕАЛЬНУЮ торговлю*
-
-⚠️ Внимание: будут отправляться настоящие ордера на биржу!",
-                parse_mode='Markdown'
-            )
-        except Exception:
-            pass
+        changed = True
+        logger.info("РЕАЛЬНАЯ торговля")
     elif data == 'set_thresh_down':
         tri.min_profit_percent = max(0.05, round(tri.min_profit_percent - 0.1, 2))
+        changed = True
     elif data == 'set_thresh_up':
         tri.min_profit_percent = min(5.0, round(tri.min_profit_percent + 0.1, 2))
+        changed = True
     elif data == 'set_amt_down':
         tri.trade_amount = max(10, tri.trade_amount - 10)
+        changed = True
     elif data == 'set_amt_up':
         tri.trade_amount = min(10000, tri.trade_amount + 10)
+        changed = True
 
-    await settings_menu(update, context)
+    if changed:
+        await q.answer()
+        await _render_settings(q)
 
 
 # === API ===
@@ -206,7 +180,7 @@ async def add_api_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 *Добавление API*\n\n"
         f"Отправьте одной строкой:\n"
         f"`биржа api_key api_secret [password]`\n\n"
-        f"Доступные биржи:\n{exs}\n\n"
+        f"Доступные:\n{exs}\n\n"
         f"Пример: `binance xxx yyy`\n"
         f"Для отмены: /cancel"
     )
@@ -218,13 +192,13 @@ async def save_api(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         parts = update.message.text.split()
         if len(parts) < 3:
-            raise ValueError("Нужно: биржа api_key api_secret [password]")
+            raise ValueError("Нужно: биржа api_key api_secret")
         pwd = parts[3] if len(parts) > 3 else None
         em.add_exchange(parts[0], parts[1], parts[2], pwd)
         await em.connect(parts[0].lower())
-        await update.message.reply_text(f"✅ API для `{parts[0]}` добавлено!", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ API `{parts[0]}` добавлено!", parse_mode='Markdown')
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: `{e}`", parse_mode='Markdown')
+        await update.message.reply_text(f"❌ `{e}`", parse_mode='Markdown')
     return ConversationHandler.END
 
 
@@ -239,17 +213,15 @@ async def scan_quick(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if not em.exchanges:
-        await q.edit_message_text("⚠️ *Нет подключённых бирж.*\n\nДобавьте API.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    await q.edit_message_text("⚡ *Скан треугольников...*", parse_mode='Markdown')
-    start_time = asyncio.get_event_loop().time()
+    await q.edit_message_text("⚡ Скан...", parse_mode='Markdown')
     try:
         ops = await tri.scan_all_exchanges()
     except Exception as e:
         await q.edit_message_text(f"❌ `{e}`", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    elapsed = round(asyncio.get_event_loop().time() - start_time, 2)
-    await show_opportunities(q, context, ops, 'triangular', elapsed)
+    await show_opportunities(q, context, ops, 'triangular')
 
 
 @check_auth
@@ -257,9 +229,9 @@ async def scan_deep(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if not em.exchanges:
-        await q.edit_message_text("⚠️ *Нет подключённых бирж.*", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    await q.edit_message_text("🔍 *Глубокий скан...*", parse_mode='Markdown')
+    await q.edit_message_text("🔍 Глубокий скан...", parse_mode='Markdown')
     all_ops = []
     tasks = []
     if len(em.exchanges) >= 2:
@@ -273,7 +245,7 @@ async def scan_deep(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if isinstance(res, list):
             all_ops.extend(res)
     all_ops.sort(key=lambda x: x.get('profit_percent', 0), reverse=True)
-    await show_opportunities(q, context, all_ops[:15], 'mixed', None)
+    await show_opportunities(q, context, all_ops[:15], 'mixed')
 
 
 @check_auth
@@ -281,39 +253,33 @@ async def scan_scalp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if not em.exchanges:
-        await q.edit_message_text("⚠️ *Нет подключённых бирж.*", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    await q.edit_message_text("📉 *Скан скальпинга...*", parse_mode='Markdown')
-    start_time = asyncio.get_event_loop().time()
+    await q.edit_message_text("📉 Скан скальпинга...", parse_mode='Markdown')
     try:
         ops = await sc.scan_all_exchanges()
     except Exception as e:
         await q.edit_message_text(f"❌ `{e}`", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    elapsed = round(asyncio.get_event_loop().time() - start_time, 2)
-    await show_opportunities(q, context, ops, 'scalping', elapsed)
+    await show_opportunities(q, context, ops, 'scalping')
 
 
-async def show_opportunities(q, context, ops, scan_type, elapsed=None):
+async def show_opportunities(q, context, ops, scan_type):
     if not ops:
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Обновить", callback_data={'triangular': 'scan_quick', 'scalping': 'scan_scalp'}.get(scan_type, 'scan_deep'))],
             [InlineKeyboardButton("🔙 Меню", callback_data='menu_main')]
         ])
-        await q.edit_message_text("😕 *Ничего не найдено.*", reply_markup=kb, parse_mode='Markdown')
+        await q.edit_message_text("😕 Ничего не найдено.", reply_markup=kb, parse_mode='Markdown')
         return
 
     type_names = {
-        'spot': 'Спот', 'triangular': '🔺 Треугольный',
+        'spot': 'Спот', 'triangular': '🔺 Треуг',
         'futures_basis': '📈 Базис', 'futures_funding': '💰 Фандинг',
         'mixed': '🔥 Комбо', 'scalping': '📉 Скальпинг'
     }
     tname = type_names.get(scan_type, scan_type)
-    header = f"📈 *{tname} — {len(ops)}:*"
-    if elapsed:
-        header += f"\n⏱ `{elapsed}` сек"
-    header += "\n\n"
-    txt = header
+    txt = f"📈 *{tname} — {len(ops)}:*\n\n"
     kb = []
 
     for i, o in enumerate(ops[:10]):
@@ -333,7 +299,7 @@ async def show_opportunities(q, context, ops, scan_type, elapsed=None):
                 f"`{o['profit_percent']:.2f}%` | `+{o['profit_usdt']:.2f}` USDT\n\n"
             )
         elif otype.startswith('futures'):
-            strategy = "Шорт фьюч" if 'sell' in o.get('strategy', '') else "Лонг фьюч" if 'buy' in o.get('strategy', '') else "Шорт+фандинг"
+            strategy = "Шорт" if 'sell' in o.get('strategy', '') else "Лонг" if 'buy' in o.get('strategy', '') else "Шорт+фандинг"
             txt += (
                 f"*{i+1}. 📈 {o['symbol']}* @ `{o['exchange']}`\n"
                 f"Базис: `{o.get('basis_percent', 0):.2f}%` | `{strategy}`\n"
@@ -451,7 +417,7 @@ async def set_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{bal}"
             f"⚠️ *Подтвердите скальпинг*\n\n"
             f"`{op['symbol']}` | Сумма: `{amount}` USDT\n"
-            f"TP: `+{exp_profit:.2f}` USDT | SL: `−{exp_loss:.2f}` USDT\n\n"
+            f"TP: `+{exp_profit:.2f}` | SL: `−{exp_loss:.2f}`\n\n"
             f"⚡ Market Buy + Limit TP\n"
             f"🛡 SL: авто-мониторинг"
         )
@@ -477,7 +443,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     tid = q.data.replace("confirm_", "")
-    await q.edit_message_text("⏳ *Исполнение...*", parse_mode='Markdown')
+    await q.edit_message_text("⏳ Исполнение...", parse_mode='Markdown')
     res = await te.execute(tid)
 
     global PAPER_MODE
@@ -624,13 +590,10 @@ async def help_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"*🔍 Глубокий* — всё одновременно\n"
         f"*📉 Скальпинг* — DIP/PUMP с авто TP/SL\n\n"
         f"*⚙️ Настройки:*\n"
-        f"• Порог прибыли для треугольника\n"
+        f"• Порог прибыли\n"
         f"• Сумма сделки\n"
-        f"• **Режим торговли: бумажная/реальная**\n\n"
-        f"💡 Советы:\n"
-        f"• BNB = скидка 25% на комиссии\n"
-        f"• Торгуйте 14:00–16:00 UTC\n"
-        f"• Бумажная торговля — для тренировки без риска"
+        f"• **Режим торговли**\n\n"
+        f"💡 BNB = скидка 25%, торгуйте 14:00–16:00 UTC"
     )
     await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
 
