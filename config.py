@@ -17,7 +17,7 @@ if not os.path.exists(env_path):
 
 load_dotenv(env_path)
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8880570485:AAFS1jsaclCy5EIkLoRYGZBTRgHHA45IbQk").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8868478802:AAGJAyMzxIla39wp8XT2bGyIakPXGvarznk").strip()
 AUTHORIZED_USER_ID_STR = os.getenv("AUTHORIZED_USER_ID", "5452533555").strip()
 
 if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "123456789:ABCdefGHIjklMNOpqrSTUvwxyz1234567890":
