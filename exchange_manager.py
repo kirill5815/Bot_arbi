@@ -94,7 +94,15 @@ class ExchangeManager:
         eid = eid.lower().strip()
         if eid not in self.exchanges:
             await self.connect(eid)
-        return await self.exchanges[eid].fetch_balance()
+        ex = self.exchanges[eid]
+        # Bybit unified account fix: explicitly request unified account type
+        if eid == 'bybit':
+            try:
+                return await ex.fetch_balance({'type': 'unified'})
+            except Exception:
+                # Fallback to default if unified fails
+                return await ex.fetch_balance()
+        return await ex.fetch_balance()
 
     def invalidate_cache(self, eid=None):
         if eid:
