@@ -443,7 +443,20 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     tid = q.data.replace("confirm_", "")
-    await q.edit_message_text("⏳ Исполнение...", parse_mode='Markdown')
+
+    # Get trade info to show appropriate loading message
+    op = None
+    for pending in [te.pending, getattr(te, '_paper_positions', {})]:
+        if tid in pending:
+            op = pending[tid].get('opportunity', {})
+            break
+
+    ttype = op.get('type', '') if op else ''
+    if ttype.startswith('futures'):
+        await q.edit_message_text("⏳ Исполнение фьючерсов...\n_Отправка 2 ордеров параллельно..._", parse_mode='Markdown')
+    else:
+        await q.edit_message_text("⏳ Исполнение...", parse_mode='Markdown')
+
     res = await te.execute(tid)
 
     global PAPER_MODE
@@ -525,43 +538,12 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for eid in em.exchanges:
         try:
             b = await em.get_balance(eid)
-            # Debug: log raw balance structure for bybit
-            if eid == 'bybit':
-                logger.info(f"Bybit raw balance keys: {list(b.keys())}")
-                if 'USDT' in b:
-                    logger.info(f"Bybit USDT: {b['USDT']}")
-                if 'info' in b:
-                    logger.info(f"Bybit info keys: {list(b['info'].keys())}")
-
-            # Try unified account structure first (bybit v5)
-            if eid == 'bybit' and 'info' in b:
-                info = b['info']
-                if 'result' in info and 'list' in info['result']:
-                    account_list = info['result']['list']
-                    if account_list:
-                        coins = account_list[0].get('coin', [])
-                        usdt_coin = next((c for c in coins if c.get('coin') == 'USDT'), None)
-                        if usdt_coin:
-                            # For unified account: walletBalance - totalPositionIM - totalOrderIM
-                            wallet = float(usdt_coin.get('walletBalance', 0) or 0)
-                            pos_im = float(usdt_coin.get('totalPositionIM', 0) or 0)
-                            order_im = float(usdt_coin.get('totalOrderIM', 0) or 0)
-                            free = wallet - pos_im - order_im
-                            total_free += free
-                            txt += f"*{eid}:* `{free:.2f}` USDT (Unified)\n"
-                            continue
-
-            # Standard ccxt structure fallback
             u = b.get('USDT', {})
             free = u.get('free', 0)
-            if free == 0 and 'total' in u:
-                # If free is 0 but total exists, use total as fallback
-                free = u.get('total', 0)
             total_free += free
             txt += f"*{eid}:* `{free:.2f}` USDT\n"
         except Exception as e:
-            logger.error(f"Balance error for {eid}: {e}")
-            txt += f"*{eid}:* ошибка (`{str(e)[:50]}`)\n"
+            txt += f"*{eid}:* ошибка\n"
     txt += f"\n📊 Итого: `{total_free:.2f}` USDT"
     await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
 
