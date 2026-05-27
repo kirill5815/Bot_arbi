@@ -520,9 +520,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text("⚠️ Биржи не подключены.", reply_markup=main_menu_keyboard())
         return
 
-    txt = "💰 *Балансы:*
-
-"
+    txt = "💰 *Балансы:*\n\n"
     total_free = 0
     for eid in em.exchanges:
         try:
@@ -560,14 +558,11 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # If free is 0 but total exists, use total as fallback
                 free = u.get('total', 0)
             total_free += free
-            txt += f"*{eid}:* `{free:.2f}` USDT
-"
+            txt += f"*{eid}:* `{free:.2f}` USDT\n"
         except Exception as e:
             logger.error(f"Balance error for {eid}: {e}")
-            txt += f"*{eid}:* ошибка (`{str(e)[:50]}`)
-"
-    txt += f"
-📊 Итого: `{total_free:.2f}` USDT"
+            txt += f"*{eid}:* ошибка (`{str(e)[:50]}`)\n"
+    txt += f"\n📊 Итого: `{total_free:.2f}` USDT"
     await q.edit_message_text(txt, reply_markup=main_menu_keyboard(), parse_mode='Markdown')
 
 
