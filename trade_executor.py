@@ -131,20 +131,64 @@ class TradeExecutor:
         return {'success': True, 'trade': tr}
 
     async def _execute_futures(self, tid, tr) -> Dict:
-        """Фьючерсный базис: спот + фьючерс."""
+        """Фьючерсный базис: спот + фьючерс. Параллельное исполнение с таймаутом."""
+        import asyncio
         ex = self.em.exchanges.get(tr['buy_exchange'])
         if not ex:
             raise ValueError("Биржа не подключена")
 
         op = tr['opportunity']
-        qty = tr['amount_usdt'] / op['details']['spot_price']
+        spot_price = op['details']['spot_price']
+        qty = tr['amount_usdt'] / spot_price
 
-        if op['strategy'] == 'sell_futures_buy_spot':
-            o1 = await ex.create_market_buy_order(op['spot_pair'], qty)
-            o2 = await ex.create_market_sell_order(op['futures_pair'], qty)
+        # Round qty to exchange precision
+        market = ex.market(op['spot_pair'])
+        amount_precision = market.get('precision', {}).get('amount', 8)
+        if isinstance(amount_precision, int):
+            qty = round(qty, amount_precision)
         else:
-            o1 = await ex.create_market_sell_order(op['spot_pair'], qty)
-            o2 = await ex.create_market_buy_order(op['futures_pair'], qty)
+            qty = round(qty, 8)
+
+        if qty <= 0:
+            raise ValueError(f"Неверный расчёт количества: {qty}")
+
+        # Prepare orders
+        if op['strategy'] == 'sell_futures_buy_spot':
+            order1 = ex.create_market_buy_order(op['spot_pair'], qty)
+            order2 = ex.create_market_sell_order(op['futures_pair'], qty)
+        elif op['strategy'] == 'buy_futures_sell_spot':
+            order1 = ex.create_market_sell_order(op['spot_pair'], qty)
+            order2 = ex.create_market_buy_order(op['futures_pair'], qty)
+        else:
+            # Funding rate strategy: only short futures
+            order2 = ex.create_market_sell_order(op['futures_pair'], qty)
+            o2 = await asyncio.wait_for(order2, timeout=15)
+            tr['orders'] = [o2]
+            tr['status'] = 'completed'
+            return {'success': True, 'trade': tr}
+
+        # Execute both orders in parallel with timeout
+        try:
+            o1, o2 = await asyncio.wait_for(
+                asyncio.gather(order1, order2, return_exceptions=True),
+                timeout=15
+            )
+        except asyncio.TimeoutError:
+            tr['status'] = 'partial'
+            raise ValueError("Таймаут исполнения ордеров (15 сек). Проверьте позиции вручную.")
+
+        # Check for errors
+        errors = []
+        if isinstance(o1, Exception):
+            errors.append(f"Spot: {o1}")
+        if isinstance(o2, Exception):
+            errors.append(f"Futures: {o2}")
+
+        if errors:
+            tr['status'] = 'partial'
+            tr['orders'] = [o1 if not isinstance(o1, Exception) else None,
+                           o2 if not isinstance(o2, Exception) else None]
+            raise ValueError(" | ".join(errors))
 
         tr['orders'] = [o1, o2]
         tr['status'] = 'completed'
