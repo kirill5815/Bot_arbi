@@ -60,8 +60,10 @@ def check_auth(func):
 def main_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⚡ Быстрый скан", callback_data='scan_quick'),
-         InlineKeyboardButton("🔍 Глубокий скан", callback_data='scan_deep')],
-        [InlineKeyboardButton("📉 Скальпинг", callback_data='scan_scalp'),
+         InlineKeyboardButton("💱 Спот арб", callback_data='scan_spot')],
+        [InlineKeyboardButton("🔺 Треугольник", callback_data='scan_tri'),
+         InlineKeyboardButton("📉 Скальпинг", callback_data='scan_scalp')],
+        [InlineKeyboardButton("📈 Фьючерсы", callback_data='scan_futures'),
          InlineKeyboardButton("📊 Добавить API", callback_data='add_api')],
         [InlineKeyboardButton("⚙️ Настройки", callback_data='settings'),
          InlineKeyboardButton("💰 Балансы", callback_data='balance')],
@@ -225,25 +227,55 @@ async def scan_quick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @check_auth
-async def scan_deep(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def scan_spot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     if not em.exchanges:
         await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
         return
-    await q.edit_message_text("🔍 Глубокий скан...", parse_mode='Markdown')
+    if len(em.exchanges) < 2:
+        await q.edit_message_text("⚠️ Нужно минимум 2 биржи для спот-арбитража.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+    await q.edit_message_text("💱 Скан спот-арбитража...", parse_mode='Markdown')
+    try:
+        ops = await ae.scan_opportunities()
+    except Exception as e:
+        await q.edit_message_text(f"❌ `{e}`", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+    await show_opportunities(q, context, ops, 'spot')
+
+
+@check_auth
+async def scan_tri(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if not em.exchanges:
+        await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+    await q.edit_message_text("🔺 Скан треугольников...", parse_mode='Markdown')
+    try:
+        ops = await tri.scan_all_exchanges()
+    except Exception as e:
+        await q.edit_message_text(f"❌ `{e}`", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+    await show_opportunities(q, context, ops, 'triangular')
+
+
+@check_auth
+async def scan_futures(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if not em.exchanges:
+        await q.edit_message_text("⚠️ Нет бирж.", reply_markup=main_menu_keyboard(), parse_mode='Markdown')
+        return
+    await q.edit_message_text("📈 Скан фьючерсов...", parse_mode='Markdown')
     all_ops = []
-    tasks = []
-    if len(em.exchanges) >= 2:
-        tasks.append(ae.scan_opportunities())
-    tasks.append(tri.scan_all_exchanges())
-    tasks.append(sc.scan_all_exchanges())
     for eid in em.exchanges:
-        tasks.append(fut.scan_basis(eid))
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    for res in results:
-        if isinstance(res, list):
-            all_ops.extend(res)
+        try:
+            ops = await fut.scan_basis(eid)
+            all_ops.extend(ops)
+        except Exception:
+            continue
     all_ops.sort(key=lambda x: x.get('profit_percent', 0), reverse=True)
     await show_opportunities(q, context, all_ops[:15], 'mixed')
 
@@ -314,7 +346,7 @@ async def show_opportunities(q, context, ops, scan_type):
         symbol_short = o.get('symbol', o.get('path', 'unknown'))[:12]
         kb.append([InlineKeyboardButton(f"💸 #{i+1} {symbol_short}", callback_data=f"trade_{i}")])
 
-    refresh_map = {'triangular': 'scan_quick', 'scalping': 'scan_scalp'}
+    refresh_map = {'spot': 'scan_spot', 'triangular': 'scan_tri', 'scalping': 'scan_scalp', 'mixed': 'scan_futures'}
     kb.append([InlineKeyboardButton("🔄 Обновить", callback_data=refresh_map.get(scan_type, 'scan_deep'))])
     kb.append([InlineKeyboardButton("🔙 Меню", callback_data='menu_main')])
     await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
@@ -644,7 +676,9 @@ def main():
 
     app.add_handler(CallbackQueryHandler(start, pattern='^menu_main$'))
     app.add_handler(CallbackQueryHandler(scan_quick, pattern='^scan_quick$'))
-    app.add_handler(CallbackQueryHandler(scan_deep, pattern='^scan_deep$'))
+    app.add_handler(CallbackQueryHandler(scan_spot, pattern='^scan_spot$'))
+    app.add_handler(CallbackQueryHandler(scan_tri, pattern='^scan_tri$'))
+    app.add_handler(CallbackQueryHandler(scan_futures, pattern='^scan_futures$'))
     app.add_handler(CallbackQueryHandler(scan_scalp, pattern='^scan_scalp$'))
     app.add_handler(CallbackQueryHandler(settings_menu, pattern='^settings$'))
     app.add_handler(CallbackQueryHandler(adjust_setting, pattern='^set_(thresh|amt)_(up|down)$'))
